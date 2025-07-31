@@ -1,0 +1,724 @@
+---
+title: 'Statistical Analysis'
+author: 'Mohammed Fadi Shibu'
+output:
+  html_document:
+    toc: yes
+    toc_depth: 3
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(kableExtra)
+library(emmeans)
+library(gridExtra)
+library(Hmisc)
+library(lubridate)
+library(car)
+options(width=100)
+```
+
+
+---
+
+
+# Question 1
+
+---
+
+## Data Dictionary
+
+The variables are described in the table below:
+
+|Variable | Description|
+------------- | -------------
+date     | Unique date in yyyy-mm-dd format
+Hires  | Number of bikes hired
+schools_closed | Binary variable specifying whether schools are closed or not
+pubs_closed | Binary variable specifying whether pubs are closed or not (excluding pubs that serve food)
+shops_closed  | Binary variable specifying whether shops are closed or not (Non Essential)
+eating_places_closed  | Binary variable specifying whether eating places are closed or not (Including pubs that serve food)
+stay_at_home | Binary variable specifying if there is a stay at home order or not
+household_mixing_indoors_banned | Binary variable specifying if the rule is imposed or not
+wfh | Binary variable specifying if working from home is encouraged or not
+rule_of_6_indoors | Binary variable specifying if the rule is imposed or not
+curfew  | Binary variable specifying if there is a 10 pm curfew on hospitality or not
+eat_out_to_help_out | Binary variable specifying if the scheme is offered or not
+day   | Specific day of the week ( Mon-Sun)
+month | Specific month in a year ( Jan - Dec)
+year    | Years ranging from 2010 - 2023
+
+---
+
+## Data cleaning and organising 
+
+```{r}
+
+#Importing the dataset
+data.loncov <- read_csv("London_COVID_bikes.csv")
+
+
+#Checking the structure of the dataset
+str(data.loncov)
+summary(data.loncov)
+
+#Converting day, month and year categorical variables to factors.
+factor.variable.q1 <- c("day", "month","year")
+
+data.loncov[factor.variable.q1] <- lapply(data.loncov[factor.variable.q1], factor)
+str(data.loncov)
+
+#Checking the data for abnormalities using ggplot
+ggplot(data.loncov, aes(Hires, ..density..)) +geom_histogram(bins=100, alpha=1)+geom_density(color='blue') + theme_minimal() + labs(x='No of bikes hired', y='Frequency') 
+
+#The plotted histogram closely resembles a normal distribution with no significant outliers. To further understand the data, I have used the jitter plot
+
+
+ggplot(data.loncov) + geom_jitter(aes(x=year, y=Hires), size=1) + labs(x='Year', y='No of Bikes hired') + theme_minimal()
+
+#The jitter plot shows some observations at 0 and higher than 60,000. To pinpoint these data values, I used the filter function
+
+
+(data.loncov.zero <- data.loncov %>% filter(Hires==0))
+
+#After applying the filter function, it is observed that there are two instances with a value of 0. According to the data source, a scheme shutdown occurred on the 10th and 11th of September 2022 for an entire weekend, resulting in the absence of data for those dates. This explains the occurrences with a value of 0 in the dataset. So, we can remove these observations
+
+data.loncov <- data.loncov %>% filter(Hires!=0)
+
+
+#Now we can check for the values above 60000
+(data.loncov.high <- data.loncov %>% filter(Hires>=60000))
+
+#Since these values are not unusually high, we can keep them and perform statistical analysis without skewing the results
+
+#Creating a bar plot to visualise the frequency distribution of "Work From Home", "Rule of 6 Indoors", and Eat out to Help out Scheme" with color-coded bars for each year
+
+grid.arrange(
+
+ggplot(data.loncov, aes(x=wfh)) + geom_bar(aes(fill = year)) + theme_minimal() + labs(x='Work From Home', y='Frequency') + scale_fill_viridis_d(option = "cividis") + scale_x_continuous(breaks = c(0, 1), labels = c("0", "1")),
+
+ggplot(data.loncov, aes(x=rule_of_6_indoors)) + geom_bar(aes(fill = year)) + theme_minimal() + labs(x='Rule of 6 Indoors', y='Frequency') + scale_fill_viridis_d(option = "cividis") + scale_x_continuous(breaks = c(0, 1), labels = c("0", "1")),
+
+ggplot(data.loncov, aes(x=eat_out_to_help_out)) + geom_bar(aes(fill = year)) + theme_minimal() + labs(x='Eat Out to Help Out Scheme', y='Frequency') + scale_fill_viridis_d(option = "cividis") + scale_x_continuous(breaks = c(0, 1), labels = c("0", "1")),
+
+ncol=3)
+
+
+#In summary, the data indicates a significant disparity in the frequencies of 'Work From Home' (wfh), 'Rule of 6 Indoors' (rule_of_6_indoors) and 'Eat Out to Help Out Scheme' (eat_out_to_help_out) values, with fewer instances when the category is one compared to when it is 0. This imbalance may be due to the limited impact of the COVID-19 pandemic in specific years from 2010 to 2023. Considering this is crucial for the refined interpretation of the results.
+```
+
+
+## Correlation analysis
+
+```{r}
+
+#Let's use Pearson Correlation as the data visually represents a normal distribution
+
+(rcorr(as.matrix(select(data.loncov, Hires, wfh, rule_of_6_indoors,eat_out_to_help_out ))))
+
+# Based on the correlation matrix and associated p-values, we can see that:
+# 1. There is a weak positive correlation (0.13) between the number of bike hires and working from home
+# 
+# 2. A moderate positive correlation (0.23) is observed between bike hires and the Rule of 6 Indoors
+# 
+# 3. There is a weak positive correlation (0.08) between bike hires and the Eat Out to Help Out scheme 
+# 
+# The p-values associated with these correlations are all very close to zero (0.000), indicating statistical significance
+
+# 4. The correlation coefficient of r = -0.04 for Work From Home and the Eat Out to Help Out scheme is statistically significant under NHST. But this shows only a 0.16% shared variance, which indicates independence. So, using both as predictors in a multiple regression analysis will have no risk of multicollinearity.
+#
+#The correlation coefficient of r = o.23 for Work From Home and Rule of 6 Indoors is statistically significant under NHST. But this shows only a 5.3% shared variance, which indicates independence. So, using both as predictors in a multiple regression analysis will have no risk of multicollinearity.
+
+
+#Visualising the correlation
+grid.arrange(
+  
+ggplot(data.loncov, aes(y=Hires, x=wfh)) + labs(x="Work From Home", y="Number of bike hires") + geom_smooth(method=lm) + theme_minimal(),
+
+ggplot(data.loncov, aes(y=Hires, x=rule_of_6_indoors)) + labs(x="Rule of 6 indoors", y="Number of bike hires") + geom_smooth(method=lm) + theme_minimal(),
+
+ggplot(data.loncov, aes(y=Hires, x=eat_out_to_help_out)) + labs(x="Eat out to help out", y="Number of bike hires") + geom_smooth(method=lm) + theme_minimal(),
+
+ncol=3)
+```
+
+
+## Regression Analysis to understand the effect of work from home on the number of bikes hired
+
+```{r}
+#Converting necessary categorical variables to factors. This is required to perform the regression analysis
+factor.variable.q2 <- c("schools_closed", "pubs_closed","shops_closed","eating_places_closed","stay_at_home","household_mixing_indoors_banned", "wfh", "rule_of_6_indoors","curfew","eat_out_to_help_out")
+
+data.loncov[factor.variable.q2] <- lapply(data.loncov[factor.variable.q2], factor)
+str(data.loncov)
+
+
+#Creating a linear regression model to understand the relationship between the number of bikes hired (Hires) and work from home (wfh)
+lm.hires.wfh <- lm(Hires~wfh, data.loncov)
+summary(lm.hires.wfh)
+
+
+#Finding the the 95% confidence intervals for analysis reporting
+cbind(coef(lm.hires.wfh), confint(lm.hires.wfh))
+
+
+#Finding estimated marginal means of the model for visualisation. 
+(emm.hires.wfh <- emmeans(lm.hires.wfh, ~wfh))
+
+#Visualising the emmeans data
+(  plot.emm.hires.wfh <- ggplot(summary(emm.hires.wfh), aes(x=wfh, y=emmean, ymin=lower.CL, ymax=upper.CL)) + geom_point(col="blue") + geom_linerange(col="blue") + labs(x="Work from home", y="Number of bikes hired", subtitle="Error bars showing 95% CIs")   )
+```
+
+In this model, wfh0 serves as the reference category. Encouraging work from home has a significant positive effect on the number of bikes hired $(t(4808) = 5.48, p < .001)$, predicting an average increase of $1820$ bikes hired $(CI = [1168.87, 2471.71])$.
+
+
+
+## Regression Analysis to understand the effect of the rule of 6 indoors on the number of bikes hired
+
+```{r}
+
+#Creating a linear regression model to understand the relationship between the number of bikes hired (Hires) and the rule of 6 indoors (rule_of_6_indoors)
+lm.hires.ruleof6 <- lm(Hires~rule_of_6_indoors, data.loncov)
+summary(lm.hires.ruleof6)
+
+#Finding the the 95% confidence intervals for analysis reporting
+cbind(coef(lm.hires.ruleof6), confint(lm.hires.ruleof6))
+
+#Finding estimated marginal means of the model for visualisation.
+(emm.hires.ruleof6 <- emmeans(lm.hires.ruleof6, ~rule_of_6_indoors))
+
+#Visualising the emmeans data
+(  plot.emm.hires.ruleof6 <- ggplot(summary(emm.hires.ruleof6), aes(x=rule_of_6_indoors, y=emmean, ymin=lower.CL, ymax=upper.CL)) + geom_point(col="blue") + geom_linerange(col="blue") + labs(x="Rule of 6 Indoors", y="Number of bikes hired", subtitle="Error bars are 95% CIs")   )
+```
+
+In this model, rule_of_6_indoors0 serves as the reference category. Imposing the rule of 6 indoors has a significant positive effect on the number of bikes hired $(t(4808) = 9.40, p < .001)$, predicting an average increase of $9298$ bikes hired $(CI = [7358.93, 11237.97])$.
+
+
+## Regression Analysis to understand the effect of Eat out to Help out scheme on the number of bikes hired
+
+```{r}
+
+#Creating a linear regression model to understand the relationship between the number of bikes hired (Hires) and the eat out to help out scheme (eat_out_to_help_out)
+lm.hires.eatout <- lm(Hires~eat_out_to_help_out, data.loncov)
+summary(lm.hires.eatout)
+
+#Finding the the 95% confidence intervals for analysis reporting
+cbind(coef(lm.hires.eatout), confint(lm.hires.eatout))
+
+#Finding estimated marginal means of the model for visualisation.
+(emm.hires.eatout <- emmeans(lm.hires.eatout, ~eat_out_to_help_out))
+
+#Visualising the emmeans data
+(  plot.emm.hires.ruleof6 <- ggplot(summary(emm.hires.eatout), aes(x=eat_out_to_help_out, y=emmean, ymin=lower.CL, ymax=upper.CL)) + geom_point(col="blue") + geom_linerange(col="blue") + labs(x="Eat out to help out", y="Number of bikes hired", subtitle="Error bars are 95% CIs")   )
+```
+
+In this model, eat_out_to_help_out0 serves as the reference category. Offering the Eat Out to Help Out scheme has a significant positive effect on the number of bikes hired $(t(4808) = 5.39, p < .001)$, predicting an average increase of $9857$ bikes hired $(CI = [6269.94, 13444.87])$.
+
+
+## Multiple Regression Analysis to understand the effect of the rule of 6 indoors, work from home and eat out to help out on the number of bikes hired
+
+```{r}
+lm.hires.wfh.ruleof6.eatout <- lm(Hires~wfh+rule_of_6_indoors+eat_out_to_help_out, data.loncov)
+summary(lm.hires.wfh.ruleof6.eatout)
+
+#Finding the the 95% confidence intervals for analysis reporting
+cbind(coef(lm.hires.wfh.ruleof6.eatout), confint(lm.hires.wfh.ruleof6.eatout))
+```
+
+In this model, wfh0, rule_of_6_indoors0, and eat_out_to_help_out0 serve as the reference category. This again shows that work from home $(b=1231.8, t(4806)=3.64, p<.001)$, rule of 6 indoors $(b=8492.9, t(4806)=8.38,p<.001)$ and eat out to help out scheme $(b=10309.2, t(4806)=5.69, p<.001)$ have a significant positive impact upon number of bikes hired.
+
+
+## Checking for multicollinearity in our multiple regression model
+
+```{r}
+
+#Obtaining the variance inflation factor score using vif
+vif(lm.hires.wfh.ruleof6.eatout)
+```
+
+From the results, we can see that the Variance Inflation Factor Scores (VIFs) are less than 5, thereby justifying the use of all three predictors
+
+
+
+## Analysis of Variance (ANOVA) test to compare our multiple regression and simple regression models
+
+```{r}
+
+#ANOVA test comparing two lm models, one showing the effect of work from home on the number of hires and the other showing the impact of work from home along with two  additional variables, rule of 6 indoors and eat out to help out scheme, on number of bikes hired
+
+anova(lm.hires.wfh, lm.hires.wfh.ruleof6.eatout)
+summary(lm.hires.wfh)
+summary(lm.hires.wfh.ruleof6.eatout)
+```
+
+From the results, we can see that using all three variables significantly improves the model fit $(F(2,4806) = 51.24, p<.001)$. If we compare the multiple R-squared values between the two models, we can see Model 1 has $R^2 = 0.006$ and Model 2 has $R^2 = 0.027$. This means even though the improvement is significant, it is small.
+
+
+## Analysis of Variance (ANOVA) test to compare our multiple regression model with a model using interaction terms
+```{r}
+
+#Creating the interaction term model
+lm.inter.hires.wfh.ruleof6.eatout <- lm(Hires~wfh*rule_of_6_indoors*eat_out_to_help_out, data.loncov)
+summary(lm.inter.hires.wfh.ruleof6.eatout)
+
+#Comparing the multiple regression model with our interaction term model
+anova(lm.hires.wfh.ruleof6.eatout, lm.inter.hires.wfh.ruleof6.eatout)
+summary(lm.hires.wfh.ruleof6.eatout)
+summary(lm.inter.hires.wfh.ruleof6.eatout)
+```
+
+From the results, we can see that the interaction term wfh:rule_of_6_indoors is not a significant predictor $(t(4805) = -2.50, p = 0.012)$ and other interaction terms return NA due to lack of relevant data. The model fit shows no significant improvement over the multiple regression model $(F(1,4805) = 6.23, p = 0.12)$. The t-test and F-test return the same p-value, which implies minimal multicollinearity.
+
+
+## Visualising Monthly Trends in Bike Hires Over All Years
+```{r}
+
+#Grouping the data by month and year
+data.loncov.mean.month.year <- data.loncov %>% group_by(month, year) %>% summarise("Mean" = mean(Hires))
+
+#Setting levels for months for visualisation
+month.order <- c("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", 
+                  "Aug", "Sep", "Oct", "Nov", "Dec")
+
+# Convert the "month" variable to a factor with the specified order
+data.loncov.mean.month.year$month <- factor(data.loncov.mean.month.year$month, levels = month.order)
+data.loncov$month <- factor(data.loncov$month, levels = month.order)
+
+#Visualising the trend across different months for all years
+ggplot(data.loncov.mean.month.year, aes(x=month, y=Mean, group=year, col=year)) + geom_line(alpha=0.5) + labs(x="Months", y="No of bikes hired", col="Years") + scale_colour_viridis_d(option = "plasma")
+
+```
+
+This plot shows that, except for 2010, 2011, and 2023, nearly every other year displays a consistent pattern throughout the months. Bike rentals typically show a rising trend from January, peak between June and August, and decline after October. The maximum number of bike hires was recorded in June, July, and August of 2022.
+
+
+
+## Visualising Weekly Trends in Bike Hires Across Different Months
+```{r}
+#Setting levels for days for visualisation
+data.loncov.mean.month.day <- data.loncov %>% group_by(month, day) %>% summarise("Mean" = mean(Hires))
+
+# Convert the "day" variable to a factor with the specified order
+data.loncov.mean.month.day$month <- factor(data.loncov.mean.month.day$month, levels = month.order)
+
+#Visualising the trend across different days for all months
+ggplot(data.loncov.mean.month.day, aes(x=month, y=Mean, group=day, col=day)) + geom_line(alpha=0.5) + labs(x="Months", y="No of bikes hired", col="Days") + scale_colour_viridis_d(option = "magma")
+```
+
+From this plot, we can observe that all weekdays demonstrate consistent patterns throughout various months. Saturdays and Sundays consistently have fewer bikes hired compared to weekdays, with the highest demand occurring in the middle of the week, mainly Tuesdays, Wednesdays, and Thursdays.
+
+
+As stated above, 2010 does not exhibit a similar pattern. By default, the baseline category is taken as 2010, which may cause the regression to give inaccurate results. To rectify this, we will set 2016 as the baseline category for all linear regression models.
+
+```{r}
+
+#Copying the dataset to a new variable to avoid overwriting
+year.order <- data.loncov
+
+#Setting baseline category as 2016
+year.order$year <- factor(year.order$year, levels = c("2016", "2017","2018","2019","2020","2021","2022","2023","2010","2011","2012","2013","2014","2015" ))
+```
+
+
+## Multiple Regression Analysis to understand the effect of year on number of bikes hired
+```{r}
+#Regression model with new baseline
+lm.hires.year <- lm(Hires~year, year.order)
+summary(lm.hires.year)
+
+#Regression model with default baseline for visualisation
+lm.hires.year.ordered <- lm(Hires~year, data.loncov)
+
+#Finding estimated marginal means of the default baseline model for visualisation.
+(emm.hires.year <- (emmeans(lm.hires.year.ordered, ~year)))
+
+#Visualising the data
+(  plot.emm.hires.year <- ggplot(summary(emm.hires.year), aes(x=year, y=emmean, ymin=lower.CL, ymax=upper.CL)) +geom_point()+ geom_linerange() + labs(x="Years", y="Number of bikes hired", subtitle = "Error bars are 95% CIs")   ) 
+```
+
+In this regression model, 2016 serves as the reference category. On analysing the results, we can observe that years 2010, 2011, 2012, 2013, 2021, 2022, and 2023 have a significant impact on the number of bikes hired as given by the p values $p<0.05$, while years 2014,2015, 2017, 2018, 2019, 2020 does not have a significant impact as given by $p>0.05$
+
+
+## Multiple Regression Analysis to understand the effect of month and year on number of bikes hired
+```{r}
+#Regression model with new baseline
+lm.hires.month.year <- lm(Hires~month + year, year.order)
+summary(lm.hires.month.year)
+
+#Checking for multicollinearity using variance inflation factor score (vifs)
+vif(lm.hires.month.year)
+
+#Regression model with default baseline for visualisation
+lm.hires.month.year.ordered <- lm(Hires~month+year, data.loncov)
+
+#Finding estimated marginal means of both models for visualisation. 
+(emm.hires.month.year <- emmeans(lm.hires.month.year.ordered, ~month+year))
+
+  
+#Visualising the model
+
+plot.emm.hires.year + geom_point(data = summary(emm.hires.month.year), mapping = aes(x=year, y=emmean, ymin=NULL, ymax=NULL, col=month)) + labs(subtitle="Each point is one month. Error bars are 95% CIs of the mean", col="Month")
+```
+
+In this regression model, 2016 is the reference category for year and January for month. We can observe that except December, all other months have a significant impact on the number of bikes hired as given by $p<0.05$. From the Variance Inflation Factor Scores (VIFs), it is clear that there is no multicollinearity
+
+
+## Multiple Regression Analysis to understand the effect of month, year, and day on number of bikes hired
+```{r}
+#Regression model with new baseline
+lm.hires.day.month.year <- lm(Hires~day +month +year, year.order)
+summary(lm.hires.day.month.year)
+
+#Checking for multicollinearity using variance inflation factor score (vifs)
+vif(lm.hires.day.month.year)
+
+#Regression model with default baseline for visualisation
+lm.hires.day.month.year.ordered <- lm(Hires~day +month +year, data.loncov)
+
+
+#Visualising the data using.a boxplot
+plot.emm.hires.year + geom_boxplot(data.loncov, mapping=aes(x=year, y=Hires, ymin=NULL, ymax=NULL), col="blue") + labs(subtitle = "Box is density over individual days. Error bars are 95% CIs of the mean")
+```
+
+In this regression model, 2016 serves as the reference category for years and January for month, and Friday for day. We can observe that all the days significantly impact the number of bikes hired as given by $p<0.05$. Out of them, Monday, Saturday, and Sunday have a negative impact, while others have a positive effect. From the Variance Inflation Scores (VIFs), it is clear that there is no multicollinearity
+
+
+## Analysis of Variance (ANOVA) test to compare our multiple regression models
+```{r}
+#Comparing regression model using only year and another model using both month and year as predictors
+anova(lm.hires.year, lm.hires.month.year)
+summary(lm.hires.year)
+summary(lm.hires.month.year)
+
+```
+
+From the results, we can see that using both month and year significantly improves the model fit $(F(11, 4785) = 324.66, p<.001)$. If we compare the multiple R-squared values between the two models, we can see Model 1 has $R^2 = 0.16$ and Model 2 has $R^2 = 0.52$. This means the improvement is significant as the difference in R-squared is relatively large
+
+```{r}
+#Comparing regression model using both month and year with another model using month, year and day as predictors
+anova(lm.hires.month.year, lm.hires.day.month.year)
+summary(lm.hires.month.year)
+summary(lm.hires.day.month.year)
+
+```
+
+From the results, we can see that using month, day, and year significantly improved the model fit $(F(6, 4779) = 88.28, p<.001)$. If we compare the multiple R-squared values between the two models, we can see Model 1 has $R^2 = 0.52$ and Model 2 has $R^2 = 0.56$. This means although there is an improvement, it is minimal, as defined by the close R-squared values
+
+
+## Multiple regression model with all predictors
+```{r}
+
+#Creating the model
+lm.hires.day.month.year.wfh.ruleof6.eatout <- lm(Hires ~ month + day + year + wfh + rule_of_6_indoors + eat_out_to_help_out, year.order)
+
+summary(lm.hires.day.month.year.wfh.ruleof6.eatout)
+
+#Checking for collinearity
+vif(lm.hires.day.month.year.wfh.ruleof6.eatout)
+```
+
+From the VIF scores, we can see that year and wfh are collinear as their scores are above 5. But since several years do not significantly impact the number of bike hires, we can stick with wfh and remove year as a predictor.
+
+
+## Final Multiple regression model with only statistically relevant predictors
+```{r}
+lm.hires.day.month.year.ruleof6.eatout <- lm(Hires ~ month + day + wfh + rule_of_6_indoors + eat_out_to_help_out, year.order)
+summary(lm.hires.day.month.year.ruleof6.eatout)
+```
+
+In this model, wfh0, rule_of_6_indoors1, eat_out_to_help_out1, Fri, and Jan are the reference categories for Work From Home, Rule of 6 indoors, Eat Out to Help Out scheme, Day and Month respectively. The results show that all the predictors significantly impact the number of bikes hired, given by $p<0.05$. 
+
+This also implies that it is appropriate to control for the effect of days and months rather than for years, as shown by the model above.
+
+---
+
+# Question 2
+
+---
+
+## Data Dictionary
+
+The variables are described in the table below:
+
+|Variable | Description|
+------------- | -------------
+sold by | Categorical variable showing 13 different publishers
+publisher.type | Categorical variable showing five different types of publishers
+genre | Categorical variable showing three different genres
+avg.review | Average reviews across books sold by all publishers
+daily.sales | Average sales (minus refunds) across all days
+total.reviews | Total number of reviews received for each book
+sale.price | Average price for which the book sold
+
+---
+
+## Data cleaning and organising 
+```{r}
+
+#Importing the dataset
+data.publisher <- read_csv("publisher_sales.csv")
+
+#Checking the structure of the dataset
+str(data.publisher)
+summary(data.publisher)
+
+#Converting sold by, publisher.type, and genre to factors as they are categorical variables
+
+factor.variable.q3 <- c("sold by", "publisher.type","genre")
+data.publisher[factor.variable.q3] <- lapply(data.publisher[factor.variable.q3], factor)
+str(data.publisher)
+
+#Assigning new names to the variables for easy data handling
+data.publisher <- setNames(data.publisher, c("sold_by","publisher_type", "genre", "avg_review", "daily_sales", "total_reviews", "sale_price"))
+
+
+#Checking the data for abnormalities using ggplot
+grid.arrange(
+  
+ggplot(data.publisher, aes(daily_sales, ..density..)) +geom_histogram(bins=100, alpha=1)+geom_density(color='purple') + theme_minimal() + labs(x='Daily sales volume', y='Density'),
+
+ggplot(data.publisher, aes(avg_review, ..density..)) +geom_histogram(bins=100, alpha=1)+geom_density(color='purple') + theme_minimal() + labs(x='Average Review', y='Density') ,
+
+ggplot(data.publisher, aes(total_reviews, ..density..)) +geom_histogram(bins=100, alpha=1)+geom_density(color='purple') + theme_minimal() + labs(x='Total Reviews', y='Density') ,
+
+ggplot(data.publisher, aes(sale_price, ..density..)) +geom_histogram(bins=100, alpha=1)+geom_density(color='purple') + theme_minimal() + labs(x='Sale Price', y='Density') 
+
+)
+#From the histograms, we can infer that there are no significant outliers. But we can see one observation in which daily sales is negative
+
+data.publisher.neg <- data.publisher %>% filter(daily_sales<=0)
+
+#As it is not technically correct to have a negative value for daily sales, we can remove it
+
+data.publisher <- data.publisher %>% filter(daily_sales>=0)
+```
+
+
+
+
+## Correlation Analysis
+
+```{r}
+#As the histograms plotted earlier show a non normally distributed set of data, let us use Spearman correlation 
+rcorr(as.matrix(select_if(data.publisher, is.numeric)), type = "spearman")
+
+# Based on the correlation matrix and associated p-values, we can see that:
+#   
+# 1. There is a strong positive correlation of r = 0.68 between daily sales and total reviews. The p-value p<0.001 suggests that it is statistically significant
+# 
+# 2. There is a strong negative correlation of r = -0.52 between daily sales and sale price. The p-value p<0.001 suggests that it is statistically significant
+# 
+# 3. There is another solid negative correlation of r = -0.53 between total reviews and sale price. This is also statistically significant.
+# 
+# This suggests that using these variables in regression analysis must be done carefully, as there is a risk of multicollinearity.
+
+
+#Visualising the correlation
+grid.arrange(
+
+ggplot(data.publisher, aes(y=daily_sales, x=total_reviews)) + labs(x="Total Reviews", y="Daily Sales") + geom_smooth(method=lm) + theme_minimal(),
+
+ggplot(data.publisher, aes(y=daily_sales, x=sale_price)) + labs(x="Sales Price", y="Daily Sales") + geom_smooth(method=lm) + theme_minimal(),
+
+ggplot(data.publisher, aes(y=sale_price, x=total_reviews)) + labs(x="Total Reviews", y="Sale Price") + geom_smooth(method=lm) + theme_minimal(),
+
+ncol=3)
+
+```
+
+
+
+## Regression analysis to understand the effect of average reviews and total number of reviews on book sales
+
+```{r}
+#Creating a model to understand the effect of average reviews on daily sales
+lm.avgrev.sale <- lm(daily_sales~avg_review, data.publisher)
+summary(lm.avgrev.sale)
+
+#Getting the 95% confidence intervals
+confint(lm.avgrev.sale)
+```
+
+The results show that there is no significant main effect of average review on total sales $(b = -1.05, CI = [-2.39,0.29], t(5997) = -1.53, p = 0.125)$
+
+
+```{r}
+#Creating a model to understand the effect of total reviews on daily sales
+lm.totrev.sale <- lm(daily_sales~total_reviews, data.publisher)
+summary(lm.totrev.sale)
+
+#Getting the 95% confidence intervals
+confint(lm.totrev.sale)
+```
+
+The results show that there is a significant positive main effect of total reviews on daily sales $(b=0.53, CI = [0.51, 0.54], t(5997)=68.10, p<0.001)$
+
+
+```{r}
+#Creating a multiple regression model with average and total reviews as predictors for daily sales
+lm.avgrev.totrev.sales <- lm(daily_sales~avg_review+total_reviews, data.publisher)
+summary(lm.avgrev.totrev.sales)
+
+#Getting the 95% confidence intervals
+confint(lm.avgrev.totrev.sales)
+
+#Checking for multicollinearity
+vif(lm.avgrev.totrev.sales)
+```
+
+The results show that when average review is held constant, there is a significant postive effect of total review on daily sales $(b=0.53, CI = [0.52, 0.55], t(5996)=68.96, p<0.001)$. Also when total review is held constant, there is a significant negative effect of average review on daily sales $(b = -4.30, CI = [-5.31, -3.29], t(5996) = -8.36, p<0.001)$
+
+The small Variance Inflation Factor scores(VIFs) indicate that there is no multicollinearity. 
+
+
+```{r}
+
+#Creating a multiple regression model to test the interaction effect of average review and total review on daily sales 
+lm.inter.avgrev.totrev.sales <- lm(daily_sales~avg_review*total_reviews, data.publisher)
+summary(lm.inter.avgrev.totrev.sales)
+
+#Getting the 95% confidence intervals
+confint(lm.inter.avgrev.totrev.sales)
+```
+
+The results show there is a significant positive effect of total review on daily sales $(b=0.14, CI = [0.07, 0.20], t(5995)=4.21, p<0.001)$. Also, there is a significant negative effect of average review on daily sales $(b = -14.68, CI = [-16.62, -12.74], t(5996) = -14.83, p<0.001)$. There was also a significant positive interaction term $(b = 0.10 , CI = [0.08, 0.11], t(5995)=12.22, p<0.001)$
+
+
+
+## Analysis of Variance (ANOVA) test to compare multiple regression models testing the effect of average review and total review on daily sales
+```{r}
+#Comparing two regression models where one uses only total reviews as the predictor and the other uses both average review and total review as a multiple regression
+
+anova(lm.totrev.sale, lm.avgrev.totrev.sales)
+summary(lm.totrev.sale)
+summary(lm.avgrev.totrev.sales)
+```
+
+From the results, we can see that using both month and year significantly improves the model fit $(F(1, 5996) = 69.92, p<.001)$. If we compare the multiple R-squared values between the two models, we can see Model 1 has $R^2 = 0.436$ and Model 2 also has $R^2 = 0.442$. Although the improvement is statistically significant, the difference in R-squared is minimal. 
+
+
+```{r}
+#Comparing two regression models where one is a multiple regression with average review and total review as predictors, and the other is a model that tests their interaction.
+
+anova(lm.avgrev.totrev.sales, lm.inter.avgrev.totrev.sales)
+summary(lm.avgrev.totrev.sales)
+summary(lm.inter.avgrev.totrev.sales)
+
+```
+
+From the results, we can see that using both month and year significantly improves the model fit $(F(1, 5995) = 149.21, p<.001)$. If we compare the multiple R-squared values between the two models, we can see Model 1 has $R^2 = 0.442$ and Model 2 also has $R^2 = 0.456$. Although the improvement is statistically significant, the difference in R-squared is very small. 
+
+
+
+## Visualising total reviews on daily sales by predicting for custom values
+
+```{r}
+#Creating custom values for total reviews and average review
+avg.total.predict <- tibble(total_reviews = rep(c(130, 160, 190), 3),
+                      avg_review = c(rep(2, 3), rep(3.5, 3), rep(5, 3)))
+
+#Predicting for the created values using interaction model
+avg.total.predict <- mutate(avg.total.predict, predict.sales = predict(lm.inter.avgrev.totrev.sales, avg.total.predict))
+
+#Visualising the data
+grid.arrange(
+  
+ggplot(avg.total.predict) + geom_line(aes(x = total_reviews, y = predict.sales, colour = as.factor(avg_review))) + labs(colour = "Average Review") + ylab("Predicted Daily Sales") +xlab("Total Reviews"), 
+  
+  ggplot(avg.total.predict) + geom_line(aes(x = avg_review, y = predict.sales, colour = as.factor(total_reviews))) + labs(colour = "Total Reviews") + ylab("Predicted Daily Sales") + xlab("Average Review"),
+
+nrow=2)
+```
+
+According to the graph, when the total reviews exceed 160, the model indicates that books with higher average reviews tend to have higher daily sales. Conversely, when the total reviews are below 150, the books with lower average reviews tend to achieve higher daily sales on average.
+
+## Regression analysis to understand the effect of sale price and genre on book sales
+
+```{r}
+#Creating regression model to understand the effect of sale price on daily sales
+lm.saleprice.sales <- lm(daily_sales~sale_price, data.publisher)
+summary(lm.saleprice.sales)
+
+#Getting the 95% confidence intervals
+confint(lm.saleprice.sales)
+```
+
+The results show that there is a significant negative effect of sale price on total sales $(b = -3.98, CI = [-4.15,-3.81], t(5997) = -45.77, p<.001)$
+
+
+```{r}
+#Creating regression model to understand the effect of sales price and genre on daily sales
+lm.saleprice.genre.sales <- lm(daily_sales~sale_price+genre, data.publisher)
+summary(lm.saleprice.genre.sales)
+
+#Getting the 95% confidence intervals
+confint(lm.saleprice.genre.sales)
+
+#Checking for multicollinearity
+vif(lm.saleprice.genre.sales)
+```
+
+In this model, the baseline reference category for genre is taken adult_fiction. The results show that non_fiction genre has a significant negative effect on daily sales $(b = -9.01, CI = [-11.40,-6.62], t(5995) = -7.34, p<.001)$ and YA_fiction has a significant positive effect on daily sales $(b = 30.54, CI = [29.17,31.90], t(5995) = 43.76, p<.001)$. Sale price also has a significant negative effect on daily sales $(b = -1.43, CI = [-1.71 -1.15], t(5995) = -10.03, p<.001)$.
+
+The Variance Inflation Factor scores (VIFs) are less than 5, implying no multicollinearity.
+
+
+```{r}
+#Creating regression model to understand the effect of sales price and genre on daily sales
+lm.inter.saleprice.genre.sales <- lm(daily_sales~sale_price*genre, data.publisher)
+summary(lm.inter.saleprice.genre.sales)
+
+#Getting the 95% confidence intervals
+confint(lm.inter.saleprice.genre.sales)
+
+```
+
+In this model, the baseline reference category for genre is taken adult_fiction. The results show that non_fiction genre has a significant negative effect on daily sales $(b = -23.63, CI = [-31.83,-15.43], t(5993) = -5.65, p<.001)$ and YA_fiction has a significant positive effect on daily sales $(b = 53.09, CI = [47.47,58.70], t(5993) = 18.52, p<.001)$. Sale price also has a significant negative effect on daily sales $(b = -0.71, CI = [-1.20, -0.22], t(5993) = -2.86, p<.001)$.
+
+The interaction term between sale price and non fiction genre has no significant effect on daily sales $(b = 0.64, CI = [-0.04, 1.32], t(5993) = 1.84, p = 0.06)$. 
+
+The interaction term between sale price and YA fiction has a significant negative effect on daily sales $(b = -2.83, CI = [-3.52, -2.15], t(5993) = -8.12, p<.001)$.
+
+
+## Analysis of Variance (ANOVA) test to compare multiple regression models testing the effect of sale price and genre on daily sales
+
+```{r}
+#Comparing two regression models where one uses only sale price as a predictor while the other uses both sale price and genre
+
+anova(lm.saleprice.sales, lm.saleprice.genre.sales)
+summary(lm.saleprice.sales)
+summary(lm.saleprice.genre.sales)
+```
+
+From the results, we can see that using both sale price and genre significantly improves the model fit $(F(2, 5995) = 1168.9, p<.001)$. If we compare the multiple R-squared values between the two models, we can see Model 1 has $R^2 = 0.26$ and Model 2 has $R^2 = 0.47$, which is a significant improvement.
+
+
+```{r}
+#Comparing two regression models where one is a multiple regression with sale price and genre as predictors and the other is a model that tests their interaction.
+anova(lm.saleprice.genre.sales, lm.inter.saleprice.genre.sales)
+summary(lm.saleprice.genre.sales)
+summary(lm.inter.saleprice.genre.sales)
+```
+
+From the results, we can see that using both sale price and genre significantly improves the model fit $(F(2, 5993) = 57.13, p<.001)$. If we compare the multiple R-squared values between the two models, we can see Model 1 has $R^2 = 0.47$ and Model 2 has $R^2 = 0.48$. This implies, that although the improvement in fit is significant, it is very small.
+
+
+## Visualising the effect of sale price and genre on daily sales
+```{r}
+ggplot(data.publisher, aes(x=sale_price, y=daily_sales)) + 
+  labs(x="Sales Price", y="Daily Sales", col="Genre") + geom_smooth(method=lm, aes(colour = genre)) +theme_minimal()
+
+```
+
+The plot shows variations in the impact of sale prices on the number of sales across different genres.
+
+1. In the YA fiction genre, a decline in daily sales is observed as the average sales price increases.
+
+2. In adult fiction, there is a slight reduction in daily sales with an increase in average sales price. 
+
+3. However, for the non-fiction genre, there is minimal to no decrease in daily sales associated with an increase in average sales price.
