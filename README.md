@@ -19,7 +19,7 @@
 - [How to Interpret the Findings](#how-to-interpret-the-findings)
 
 ## Introduction
-This repository presents the findings and methodologies employed in a comprehensive Business Statistics End of Term project. The project delves into various statistical analyses, primarily focusing on regression modeling to understand the impact of different factors on key business metrics. It showcases data cleaning, exploratory data analysis, correlation projects, and the application of multiple linear regression models, including the examination of interaction effects and model comparisons using ANOVA.
+This repository presents the findings and methodologies employed in a comprehensive Business Statistics  project. The project delves into various statistical analyses, primarily focusing on regression modeling to understand the impact of different factors on key business metrics. It showcases data cleaning, exploratory data analysis, correlation projects, and the application of multiple linear regression models, including the examination of interaction effects and model comparisons using ANOVA.
 
 ## Project Overview
 The project is structured around two main questions, each addressing a distinct business problem with its own dataset and analytical goals:
